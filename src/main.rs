@@ -20,6 +20,11 @@ const GIF_SIZE: (usize, usize) = (400, 300);
 const GIF_FRAMES: usize = 90;
 const GIF_DT: f32 = 0.3;
 
+/// Video: resolución final, cuadros por vista y tiempo de escena por cuadro (30 fps).
+const VIDEO_SIZE: (usize, usize) = (1280, 720);
+const VIDEO_FRAMES: usize = 300;
+const VIDEO_DT: f32 = 0.1;
+
 const SYSTEM_ZOOM: f32 = 25.0;
 const SYSTEM_PITCH: f32 = -0.6;
 
@@ -188,6 +193,11 @@ fn view_rot(v: Vec3, yaw: f32, pitch: f32) -> Vec3 {
     v.rot_y(yaw).rot_x(pitch)
 }
 
+/// Escala respecto a la resolución de referencia (800x600); usa el lado limitante para no recortar en 16:9.
+fn pixel_scale(fb: &Framebuffer) -> f32 {
+    (fb.width as f32 / WIDTH as f32).min(fb.height as f32 / HEIGHT as f32)
+}
+
 /// Dónde y de qué tamaño se dibuja un cuerpo.
 struct Placement {
     /// Centro del cuerpo en el espacio de la escena (antes de la rotación de vista).
@@ -201,7 +211,7 @@ struct Placement {
 }
 
 fn render(fb: &mut Framebuffer, meshes: &Meshes, body: &Body, pl: &Placement, t: f32, yaw: f32, pitch: f32) {
-    let k = fb.width as f32 / WIDTH as f32;
+    let k = pixel_scale(fb);
     let zoom = pl.zoom * k;
     let (cx, cy) = (fb.width as f32 / 2.0, fb.height as f32 / 2.0);
     let center_view = view_rot(pl.center, yaw, pitch);
@@ -299,7 +309,7 @@ fn render_system(
     (yaw, pitch, zoom_mul): (f32, f32, f32),
     focus: usize,
 ) {
-    let k = fb.width as f32 / WIDTH as f32;
+    let k = pixel_scale(fb);
     let zoom = SYSTEM_ZOOM * zoom_mul * k;
     let (cx, cy) = (fb.width as f32 / 2.0, fb.height as f32 / 2.0);
 
@@ -399,6 +409,20 @@ fn main() {
     };
     let bodies = bodies();
     let views = bodies.len() + 1;
+
+    // Modo sin ventana: cargo run --release -- --video <vista> <carpeta> vuelca los cuadros PNG de una vista.
+    if let Some(i) = args.iter().position(|a| a == "--video") {
+        let v: usize = args[i + 1].parse().expect("vista inválida");
+        let dir = &args[i + 2];
+        std::fs::create_dir_all(dir).expect("no se pudo crear la carpeta");
+        let ss = 2;
+        let mut fb = Framebuffer::new(VIDEO_SIZE.0 * ss, VIDEO_SIZE.1 * ss);
+        for n in 0..VIDEO_FRAMES {
+            draw(&mut fb, &meshes, &bodies, v, n as f32 * VIDEO_DT, (0.0, default_pitch(&bodies, v), 1.0), 0);
+            fb.to_image(ss).save(format!("{dir}/{n:04}.png")).expect("no se pudo guardar el cuadro");
+        }
+        return;
+    }
 
     // Modo sin ventana: un GIF animado por vista (el sistema y la vista conjunta incluidos) en docs/.
     if args.iter().any(|a| a == "--gif") {
