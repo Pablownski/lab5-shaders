@@ -13,6 +13,12 @@ pub enum Shader {
     Lava,
     Ice,
     IceRing,
+    Satellite,
+    Io,
+    Europa,
+    BlackHole,
+    BhHalo,
+    BhDisk,
 }
 
 /// Datos interpolados que recibe cada shader de fragmento.
@@ -46,6 +52,12 @@ pub fn shade(s: Shader, f: &Frag) -> Option<[f32; 4]> {
         Shader::Lava => lava(f),
         Shader::Ice => ice_giant(f),
         Shader::IceRing => ice_ring(f),
+        Shader::Satellite => satellite(f),
+        Shader::Io => io(f),
+        Shader::Europa => europa(f),
+        Shader::BlackHole => black_hole(f),
+        Shader::BhHalo => bh_halo(f),
+        Shader::BhDisk => bh_disk(f),
     }
 }
 
@@ -423,4 +435,104 @@ fn ice_ring(f: &Frag) -> Option<[f32; 4]> {
     let grain = 0.7 + 0.3 * noise(Vec3::new(u * 150.0, 2.0, 0.0));
     let bright = 0.35 + 0.65 * f.n.dot(f.light).abs();
     out(c3(0.70, 0.86, 0.90) * bright, d * 0.5 * grain)
+}
+
+// ---------- satélites y lunas ----------
+
+fn satellite(f: &Frag) -> Option<[f32; 4]> {
+    let p = f.p;
+    let diff = f.n.dot(f.light).abs();
+    // Los paneles son las piezas planas de los lados; el resto es el cuerpo.
+    if p.x.abs() > 0.4 && p.y.abs() < 0.01 {
+        // Celdas solares: rejilla clara sobre azul oscuro, con destello especular.
+        let (gx, gz) = ((p.x.abs() * 7.0).fract(), ((p.z + 0.45) * 7.0).fract());
+        let line = smoothstep(0.06, 0.0, gx.min(gz)) + smoothstep(0.94, 1.0, gx.max(gz));
+        let cell = c3(0.04, 0.09, 0.28).mix(c3(0.10, 0.22, 0.55), diff);
+        let col = cell.mix(c3(0.75, 0.8, 0.9), line.min(1.0) * 0.6) * (0.25 + 0.9 * diff);
+        return out(col + c3(0.7, 0.8, 1.0) * diff.powi(8) * 0.4, 1.0);
+    }
+    // Cuerpo con aislante dorado arrugado.
+    let wrinkle = noise(p * 40.0);
+    let gold = c3(0.85, 0.62, 0.20).mix(c3(0.55, 0.38, 0.10), wrinkle);
+    out(gold * (0.12 + 0.95 * f.n.dot(f.light).max(0.0)), 1.0)
+}
+
+fn io(f: &Frag) -> Option<[f32; 4]> {
+    let p = f.p;
+    // Capa 1: azufre amarillo con manchas naranjas y polos rojizos.
+    let n = fbm(p * 4.0 + Vec3::new(3.0, 1.0, 8.0), 4);
+    let mut col = c3(0.95, 0.85, 0.30).mix(c3(0.85, 0.48, 0.14), smoothstep(0.4, 0.7, n));
+    col = col.mix(c3(0.65, 0.25, 0.10), smoothstep(0.7, 0.95, p.y.abs()) * 0.7);
+    // Capa 2: volcanes (celdas pequeñas) oscuros con halo de ceniza.
+    let (d, _, id) = worley(p * 6.0);
+    if id > 0.55 {
+        col = col.mix(c3(0.60, 0.25, 0.08), smoothstep(0.30, 0.1, d) * 0.7);
+        col = col.mix(c3(0.08, 0.03, 0.02), smoothstep(0.07, 0.03, d));
+    }
+    out(col * (0.02 + diffuse(f)), 1.0)
+}
+
+fn europa(f: &Frag) -> Option<[f32; 4]> {
+    let p = f.p;
+    // Capa 1: hielo crema con variaciones.
+    let mut col = c3(0.88, 0.85, 0.78) * (0.85 + 0.2 * fbm(p * 6.0, 3));
+    // Capa 2: red de grietas rojizas (distancia entre celdas de Worley, con warp).
+    let w = noise(p * 5.0) * 0.5;
+    let (f1, f2, _) = worley(p * 3.5 + Vec3::new(w, w, w));
+    col = col.mix(c3(0.50, 0.28, 0.18), smoothstep(0.07, 0.0, f2 - f1) * 0.85);
+    out(col * (0.02 + diffuse(f)), 1.0)
+}
+
+// ---------- agujero negro ----------
+
+fn black_hole(f: &Frag) -> Option<[f32; 4]> {
+    // Horizonte de sucesos: negro absoluto con un anillo de fotones muy fino en el borde.
+    let edge = (1.0 - facing(f)).powi(10);
+    out(c3(1.0, 0.82, 0.55) * edge * 0.9, 1.0)
+}
+
+fn bh_halo(f: &Frag) -> Option<[f32; 4]> {
+    // Resplandor y anillo de fotones: luz del disco desviada alrededor del horizonte (lente gravitacional).
+    // El quad mide 3 radios del horizonte de semiancho.
+    let r = (f.p.x * f.p.x + f.p.y * f.p.y).sqrt() * 3.0;
+    if r < 1.0 {
+        return None;
+    }
+    let a = f.p.y.atan2(f.p.x);
+    // La imagen lente del disco se concentra arriba y abajo del horizonte.
+    let polar = 0.55 + 0.75 * a.sin().abs();
+    let swirl = 0.75 + 0.5 * noise(Vec3::new(a.cos() * 2.5 + f.t * 0.3, a.sin() * 2.5, r * 3.0));
+    let glow = (-(r - 1.0) * 2.6).exp() * polar * swirl;
+    let ring = (-((r - 1.07) / 0.035).powi(2)).exp() * 1.4;
+    let col = c3(1.0, 0.45, 0.08).mix(c3(1.0, 0.92, 0.7), (-(r - 1.0) * 5.0).exp());
+    out(col, (glow * 0.8 + ring).clamp(0.0, 1.0) * smoothstep(3.0, 2.2, r))
+}
+
+fn bh_disk(f: &Frag) -> Option<[f32; 4]> {
+    let r = (f.p.x * f.p.x + f.p.z * f.p.z).sqrt();
+    let u = (r - 0.5) * 2.0; // 0 = borde interior, 1 = exterior
+    // Rotación diferencial: lo interno gira más rápido; las vetas se estiran en azimut.
+    let a = f.p.z.atan2(f.p.x) - f.t * 1.6 / (0.25 + u);
+    let streak = fbm(Vec3::new(u * 16.0, a.cos() * 1.3, a.sin() * 1.3), 4);
+    let fine = noise(Vec3::new(u * 60.0, a.cos() * 4.0, a.sin() * 4.0));
+    let heat = ((1.0 - u).powf(1.4) * (0.55 + 0.9 * streak) + (fine - 0.5) * 0.15).clamp(0.0, 1.0);
+    let mut col = ramp(
+        &[
+            (0.0, c3(0.30, 0.04, 0.0)),
+            (0.35, c3(0.95, 0.30, 0.04)),
+            (0.7, c3(1.0, 0.65, 0.2)),
+            (1.0, c3(1.0, 0.97, 0.85)),
+        ],
+        heat,
+    );
+    // Efecto Doppler: el lado que se acerca a la cámara brilla más y se vuelve más azul/blanco.
+    let v = Vec3::new(
+        f.axis.y * f.w.z - f.axis.z * f.w.y,
+        f.axis.z * f.w.x - f.axis.x * f.w.z,
+        f.axis.x * f.w.y - f.axis.y * f.w.x,
+    );
+    let approach = (-v.z / v.length().max(1e-4)).clamp(-1.0, 1.0);
+    col = col * (1.0 + 0.9 * approach) + c3(0.2, 0.25, 0.4) * approach.max(0.0) * heat;
+    let alpha = smoothstep(0.0, 0.06, u) * smoothstep(1.0, 0.65, u) * (0.35 + 0.65 * heat.sqrt());
+    out(col * 1.15, alpha.clamp(0.0, 1.0))
 }

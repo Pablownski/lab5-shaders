@@ -15,7 +15,7 @@ use shaders::{Frag, Shader};
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
 const SUPERSAMPLE: usize = 2;
-const SYSTEM_ZOOM: f32 = 30.0;
+const SYSTEM_ZOOM: f32 = 25.0;
 const SYSTEM_PITCH: f32 = -0.6;
 
 #[derive(Clone, Copy)]
@@ -23,6 +23,7 @@ enum MeshKind {
     Sphere,
     Ring,
     Quad,
+    Satellite,
 }
 
 /// Una pieza renderizable: malla + shader + su transformación (escala, inclinación, giro, órbita).
@@ -34,8 +35,8 @@ struct Part {
     tilt: f32,
     /// Velocidad de giro propio (rad/s).
     spin: f32,
-    /// (distancia, velocidad angular, inclinación de la órbita) respecto al planeta.
-    orbit: Option<(f32, f32, f32)>,
+    /// (distancia, velocidad angular, inclinación de la órbita, fase inicial) respecto al planeta.
+    orbit: Option<(f32, f32, f32, f32)>,
     /// Los billboards siempre miran a la cámara (no heredan inclinación ni rotación de vista).
     billboard: bool,
     /// Inclinación del eje del planeta, para la sombra de sus anillos.
@@ -73,18 +74,31 @@ fn bodies() -> Vec<Body> {
                 Part { spin: 0.25, tilt: 0.41, ..part(MeshKind::Sphere, Shader::Earth, 1.0) },
                 Part {
                     spin: 0.1,
-                    orbit: Some((2.5, 0.35, 0.18)),
+                    orbit: Some((2.5, 0.35, 0.18, 1.94)),
                     ..part(MeshKind::Sphere, Shader::Moon, 0.27)
+                },
+                // Satélites artificiales: uno en órbita baja inclinada y otro casi polar y retrógrado.
+                Part {
+                    spin: 0.9,
+                    orbit: Some((1.55, 1.1, 0.8, 0.5)),
+                    ..part(MeshKind::Satellite, Shader::Satellite, 0.13)
+                },
+                Part {
+                    spin: -0.7,
+                    orbit: Some((1.9, -0.8, 1.45, 3.0)),
+                    ..part(MeshKind::Satellite, Shader::Satellite, 0.11)
                 },
             ],
         },
         Body {
-            name: "Gigante gaseoso con anillos",
+            name: "Gigante gaseoso con anillos y lunas",
             file: "gaseoso",
-            zoom: 125.0,
+            zoom: 100.0,
             parts: vec![
                 Part { spin: 0.3, tilt: 0.4, axis_tilt: 0.4, ..part(MeshKind::Sphere, Shader::Gas, 1.0) },
                 Part { tilt: 0.4, axis_tilt: 0.4, ..part(MeshKind::Ring, Shader::GasRing, 2.5) },
+                Part { spin: 0.2, orbit: Some((3.1, 0.5, 0.1, 0.4)), ..part(MeshKind::Sphere, Shader::Io, 0.17) },
+                Part { spin: 0.1, orbit: Some((3.9, 0.3, -0.12, 3.3)), ..part(MeshKind::Sphere, Shader::Europa, 0.15) },
             ],
         },
         Body {
@@ -102,6 +116,16 @@ fn bodies() -> Vec<Body> {
                 Part { tilt: 1.35, axis_tilt: 1.35, ..part(MeshKind::Ring, Shader::IceRing, 2.2) },
             ],
         },
+        Body {
+            name: "Agujero negro",
+            file: "agujero",
+            zoom: 80.0,
+            parts: vec![
+                Part { billboard: true, ..part(MeshKind::Quad, Shader::BhHalo, 3.0) },
+                part(MeshKind::Sphere, Shader::BlackHole, 1.0),
+                Part { tilt: 0.22, axis_tilt: 0.22, ..part(MeshKind::Ring, Shader::BhDisk, 3.8) },
+            ],
+        },
     ]
 }
 
@@ -109,6 +133,7 @@ struct Meshes {
     sphere: Mesh,
     ring: Mesh,
     quad: Mesh,
+    satellite: Mesh,
 }
 
 impl Meshes {
@@ -117,6 +142,7 @@ impl Meshes {
             MeshKind::Sphere => &self.sphere,
             MeshKind::Ring => &self.ring,
             MeshKind::Quad => &self.quad,
+            MeshKind::Satellite => &self.satellite,
         }
     }
 }
@@ -152,7 +178,7 @@ fn render(fb: &mut Framebuffer, meshes: &Meshes, body: &Body, pl: &Placement, t:
         let spin = part.spin * t;
         let scale = part.scale * pl.size;
         let offset = match part.orbit {
-            Some((dist, speed, incl)) => Vec3::new((speed * t + 1.94).cos(), 0.0, (speed * t + 1.94).sin())
+            Some((dist, speed, incl, phase)) => Vec3::new((speed * t + phase).cos(), 0.0, (speed * t + phase).sin())
                 .rot_x(incl)
                 * (dist * pl.size),
             None => Vec3::ZERO,
@@ -197,12 +223,13 @@ fn render(fb: &mut Framebuffer, meshes: &Meshes, body: &Body, pl: &Placement, t:
 }
 
 /// Órbita de cada cuerpo en el sistema: (índice en `bodies`, tamaño, distancia, velocidad angular, fase).
-const SYSTEM: [(usize, f32, f32, f32, f32); 5] = [
+const SYSTEM: [(usize, f32, f32, f32, f32); 6] = [
     (0, 1.7, 0.0, 0.0, 0.0),   // estrella
     (3, 0.36, 3.4, 0.50, 0.7), // lava
     (1, 0.50, 5.2, 0.30, 2.4), // rocoso + luna
     (2, 1.00, 8.6, 0.15, 3.2), // gaseoso + anillos
     (4, 0.75, 11.8, 0.09, 5.6), // hielo + anillos
+    (5, 0.30, 14.6, 0.05, 1.2), // agujero negro
 ];
 
 fn system_center(dist: f32, speed: f32, phase: f32, t: f32) -> Vec3 {
@@ -273,7 +300,9 @@ fn focus_zoom(focus: usize) -> f32 {
     if focus == 0 {
         1.0
     } else {
-        110.0 / (SYSTEM_ZOOM * SYSTEM[focus].1)
+        // El agujero negro tiene un disco enorme respecto a su horizonte: se encuadra más lejos.
+        let radius_px = if SYSTEM[focus].0 == 5 { 45.0 } else { 110.0 };
+        radius_px / (SYSTEM_ZOOM * SYSTEM[focus].1)
     }
 }
 
@@ -307,7 +336,7 @@ fn default_pitch(bodies: &[Body], view: usize) -> f32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let meshes = Meshes { sphere: mesh::sphere(64, 128), ring: mesh::annulus(180), quad: mesh::quad() };
+    let meshes = Meshes { sphere: mesh::sphere(64, 128), ring: mesh::annulus(180), quad: mesh::quad(), satellite: mesh::satellite() };
     let bodies = bodies();
     let views = bodies.len() + 1;
 
@@ -331,7 +360,7 @@ fn main() {
     let mut current = bodies.len();
     let (mut yaw, mut pitch) = (0.0_f32, default_pitch(&bodies, current));
     let (mut t, mut paused, mut zoom, mut focus) = (0.0_f32, false, 1.0_f32, 0usize);
-    let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6];
+    let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6, Key::Key7];
     window.set_title(&title(&bodies, current, focus));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {

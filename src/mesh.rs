@@ -63,3 +63,36 @@ pub fn quad() -> Mesh {
         spherical: false,
     }
 }
+
+/// Satélite artificial: cuerpo cúbico + dos paneles solares planos (una sola malla).
+pub fn satellite() -> Mesh {
+    let mut m = Mesh { pos: Vec::new(), nrm: Vec::new(), tris: Vec::new(), spherical: false };
+    let add_quad = |m: &mut Mesh, q: [Vec3; 4], n: Vec3| {
+        let base = m.pos.len();
+        for v in q {
+            m.pos.push(v);
+            m.nrm.push(n);
+        }
+        m.tris.push([base, base + 1, base + 2]);
+        m.tris.push([base, base + 2, base + 3]);
+    };
+    let h = 0.3;
+    let v = |x: f32, y: f32, z: f32| Vec3::new(x * h, y * h, z * h);
+    // Seis caras del cubo.
+    add_quad(&mut m, [v(1., -1., -1.), v(1., 1., -1.), v(1., 1., 1.), v(1., -1., 1.)], Vec3::new(1., 0., 0.));
+    add_quad(&mut m, [v(-1., -1., 1.), v(-1., 1., 1.), v(-1., 1., -1.), v(-1., -1., -1.)], Vec3::new(-1., 0., 0.));
+    add_quad(&mut m, [v(-1., 1., -1.), v(-1., 1., 1.), v(1., 1., 1.), v(1., 1., -1.)], Vec3::new(0., 1., 0.));
+    add_quad(&mut m, [v(-1., -1., 1.), v(-1., -1., -1.), v(1., -1., -1.), v(1., -1., 1.)], Vec3::new(0., -1., 0.));
+    add_quad(&mut m, [v(-1., -1., 1.), v(1., -1., 1.), v(1., 1., 1.), v(-1., 1., 1.)], Vec3::new(0., 0., 1.));
+    add_quad(&mut m, [v(1., -1., -1.), v(-1., -1., -1.), v(-1., 1., -1.), v(1., 1., -1.)], Vec3::new(0., 0., -1.));
+    // Paneles solares a los lados (planos en XZ).
+    for s in [1.0_f32, -1.0] {
+        let (x0, x1) = (s * 0.45, s * 1.6);
+        add_quad(
+            &mut m,
+            [Vec3::new(x0, 0., -0.45), Vec3::new(x1, 0., -0.45), Vec3::new(x1, 0., 0.45), Vec3::new(x0, 0., 0.45)],
+            Vec3::new(0., 1., 0.),
+        );
+    }
+    m
+}
