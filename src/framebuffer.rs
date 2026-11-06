@@ -65,8 +65,8 @@ impl Framebuffer {
         }
     }
 
-    /// Guarda un PNG promediando bloques de `ss` x `ss` píxeles (supermuestreo).
-    pub fn save_png(&self, path: &str, ss: usize) -> image::ImageResult<()> {
+    /// Imagen RGB promediando bloques de `ss` x `ss` píxeles (supermuestreo).
+    pub fn to_image(&self, ss: usize) -> image::RgbImage {
         let (w, h) = (self.width / ss, self.height / ss);
         let mut img = image::RgbImage::new(w as u32, h as u32);
         for y in 0..h {
@@ -88,6 +88,10 @@ impl Framebuffer {
                 );
             }
         }
-        img.save(path)
+        img
+    }
+
+    pub fn save_png(&self, path: &str, ss: usize) -> image::ImageResult<()> {
+        self.to_image(ss).save(path)
     }
 }

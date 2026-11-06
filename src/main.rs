@@ -15,6 +15,11 @@ use shaders::{Frag, Shader};
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
 const SUPERSAMPLE: usize = 2;
+/// GIFs: resolución final, cuadros, y tiempo de escena que avanza por cuadro.
+const GIF_SIZE: (usize, usize) = (400, 300);
+const GIF_FRAMES: usize = 90;
+const GIF_DT: f32 = 0.3;
+
 const SYSTEM_ZOOM: f32 = 25.0;
 const SYSTEM_PITCH: f32 = -0.6;
 
@@ -394,6 +399,27 @@ fn main() {
     };
     let bodies = bodies();
     let views = bodies.len() + 1;
+
+    // Modo sin ventana: un GIF animado por vista (el sistema y la vista conjunta incluidos) en docs/.
+    if args.iter().any(|a| a == "--gif") {
+        use image::codecs::gif::{GifEncoder, Repeat};
+        use image::{Delay, Frame};
+        let ss = 2;
+        let mut fb = Framebuffer::new(GIF_SIZE.0 * ss, GIF_SIZE.1 * ss);
+        // La escena se dibuja a 800 px de ancho de referencia; el zoom se reescala con el tamaño del framebuffer.
+        for v in 0..views {
+            let path = format!("docs/{}.gif", view_name(&bodies, v).1);
+            let mut enc = GifEncoder::new_with_speed(std::fs::File::create(&path).expect("no se pudo crear el gif"), 10);
+            enc.set_repeat(Repeat::Infinite).unwrap();
+            for i in 0..GIF_FRAMES {
+                draw(&mut fb, &meshes, &bodies, v, i as f32 * GIF_DT, (0.0, default_pitch(&bodies, v), 1.0), 0);
+                let rgba = image::DynamicImage::ImageRgb8(fb.to_image(ss)).into_rgba8();
+                enc.encode_frame(Frame::from_parts(rgba, 0, 0, Delay::from_numer_denom_ms(67, 1))).unwrap();
+            }
+            println!("guardado {path}");
+        }
+        return;
+    }
 
     // Modo sin ventana: genera un PNG por vista en docs/ (con supermuestreo).
     if args.iter().any(|a| a == "--save-all") {

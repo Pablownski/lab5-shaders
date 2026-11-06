@@ -7,6 +7,7 @@ Software renderer en Rust (rasterizador propio con z-buffer, sin texturas ni mat
 ```
 cargo run --release              # ventana interactiva
 cargo run --release -- --save-all   # genera los PNG de docs/ (con supermuestreo 2x)
+cargo run --release -- --gif        # genera un GIF animado por vista en docs/
 ```
 
 Controles: `1`–`7` cambia de vista (la `7` es la **vista conjunta**: estrella, Tierra, luna, satélites, meteorito y estrella fugaz), `8` muestra el **sistema completo** (vista inicial) · flechas rotan la cámara · rueda del ratón o `+`/`-` hacen zoom · `Tab` (en el sistema) enfoca y sigue al siguiente cuerpo: estrella → lava → rocoso → gaseoso → hielo → agujero negro · `R` reinicia la vista · `Espacio` pausa la animación · `S` guarda un PNG · `Esc` sale.
@@ -24,6 +25,15 @@ Controles: `1`–`7` cambia de vista (la `7` es la **vista conjunta**: estrella,
 | 7 | **Vista conjunta** | la estrella al fondo y la Tierra con su luna, satélites, meteorito y estrella fugaz, todo a la vez |
 
 Extras: **estrella fugaz** (franja con cabeza brillante, destello en cruz y estela azul→violeta que parpadea) que cruza cerca de la Tierra; **meteorito** (malla irregular deformada con ruido, roca con cráteres, destellos metálicos y grietas al rojo) con estela de fuego que pasa rozando el planeta; **satélites artificiales** (malla separada: cuerpo dorado y paneles solares con celdas) orbitando la Tierra; **lunas** del gaseoso (Ío con volcanes, Europa con grietas); **anillos** (malla de anillo separada, semitransparente, con división de Cassini y sombra del planeta) en el gaseoso y el de hielo; **luna** (esfera separada con cráteres de dos escalas y mares) que orbita la Tierra; **rotación y traslación** (cada planeta gira sobre su eje inclinado y la luna orbita).
+
+## Animaciones (GIF)
+
+| | |
+|---|---|
+| Sistema completo ![](docs/sistema.gif) | Vista conjunta ![](docs/conjunta.gif) |
+| Estrella ![](docs/estrella.gif) | Planeta rocoso ![](docs/rocoso.gif) |
+| Gigante gaseoso ![](docs/gaseoso.gif) | Planeta de lava ![](docs/lava.gif) |
+| Gigante de hielo ![](docs/hielo.gif) | Agujero negro ![](docs/agujero.gif) |
 
 ## Capturas
 
