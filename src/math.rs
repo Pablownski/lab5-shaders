@@ -18,6 +18,14 @@ impl Vec3 {
         self.x * o.x + self.y * o.y + self.z * o.z
     }
 
+    pub fn cross(self, o: Vec3) -> Vec3 {
+        Vec3::new(
+            self.y * o.z - self.z * o.y,
+            self.z * o.x - self.x * o.z,
+            self.x * o.y - self.y * o.x,
+        )
+    }
+
     pub fn length(self) -> f32 {
         self.dot(self).sqrt()
     }

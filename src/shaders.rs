@@ -19,6 +19,9 @@ pub enum Shader {
     BlackHole,
     BhHalo,
     BhDisk,
+    Meteorite,
+    ShootingStar,
+    Fire,
 }
 
 /// Datos interpolados que recibe cada shader de fragmento.
@@ -58,6 +61,9 @@ pub fn shade(s: Shader, f: &Frag) -> Option<[f32; 4]> {
         Shader::BlackHole => black_hole(f),
         Shader::BhHalo => bh_halo(f),
         Shader::BhDisk => bh_disk(f),
+        Shader::Meteorite => meteorite(f),
+        Shader::ShootingStar => shooting_star(f),
+        Shader::Fire => fire_trail(f),
     }
 }
 
@@ -535,4 +541,86 @@ fn bh_disk(f: &Frag) -> Option<[f32; 4]> {
     col = col * (1.0 + 0.9 * approach) + c3(0.2, 0.25, 0.4) * approach.max(0.0) * heat;
     let alpha = smoothstep(0.0, 0.06, u) * smoothstep(1.0, 0.65, u) * (0.35 + 0.65 * heat.sqrt());
     out(col * 1.15, alpha.clamp(0.0, 1.0))
+}
+
+// ---------- meteorito y estrella fugaz ----------
+
+fn meteorite(f: &Frag) -> Option<[f32; 4]> {
+    let p = f.p * 3.0;
+    let diff = diffuse(f);
+    let mu = facing(f);
+    // Capa 1: roca oscura con vetas de ruido.
+    let mut col = c3(0.16, 0.14, 0.13).mix(c3(0.38, 0.33, 0.29), fbm(p * 2.0, 4));
+    // Capa 2: cráteres pequeños (celdas de Worley).
+    let (d, _, id) = worley(p * 1.6);
+    if id > 0.45 {
+        col = col * (1.0 - 0.45 * smoothstep(0.35, 0.0, d));
+    }
+    // Capa 3: destellos metálicos (hierro-níquel).
+    col = col.mix(c3(0.78, 0.74, 0.70), smoothstep(0.80, 0.9, noise(p * 9.0)) * 0.7);
+    let mut lit = col * (0.06 + diff);
+    // Capa 4: grietas al rojo vivo por el calentamiento de la entrada atmosférica.
+    let (f1, f2, _) = worley(p * 2.2 + Vec3::new(3.0, 0.0, 1.0));
+    let ember = smoothstep(0.09, 0.0, f2 - f1) * (0.6 + 0.4 * (f.t * 7.0 + p.x * 3.0).sin());
+    lit += c3(1.0, 0.38, 0.05) * ember * 0.9;
+    lit += c3(1.0, 0.45, 0.1) * (1.0 - mu).powi(3) * 0.25;
+    out(lit, 1.0)
+}
+
+/// Posición de la cabeza de una estela dentro del quad (x en [-1, 1]); deja margen para que el brillo no se corte.
+pub const STREAK_HEAD: f32 = 0.85;
+/// Semialto del quad de las estelas (ver `mesh::streak`).
+const STREAK_HALF_H: f32 = 0.3;
+
+/// (u, v, d, delante): u = distancia a la cabeza en [0, 1]; v = lateral en [-1, 1];
+/// d = distancia euclidiana a la cabeza; delante = 0 pasada la cabeza.
+fn streak_coords(f: &Frag) -> (f32, f32, f32, f32) {
+    let dx = STREAK_HEAD - f.p.x;
+    let u = (dx / (STREAK_HEAD + 1.0)).clamp(0.0, 1.0);
+    let ahead = smoothstep(-0.12, 0.0, dx);
+    (u, f.p.y / STREAK_HALF_H, (dx * dx + f.p.y * f.p.y).sqrt(), ahead)
+}
+
+fn shooting_star(f: &Frag) -> Option<[f32; 4]> {
+    let (u, v, d, ahead) = streak_coords(f);
+    // Capa 1: estela que se afina y se apaga hacia atrás, con parpadeo.
+    let width = 0.05 + 0.3 * (1.0 - u);
+    let side = v.abs() / width;
+    let flicker = 0.75 + 0.5 * noise(Vec3::new(u * 40.0 - f.t * 6.0, v * 2.0, 1.0));
+    let tail = (-side * side * 2.0).exp() * (-u * 4.0).exp() * flicker * ahead;
+    // Capa 2: cabeza brillante (núcleo + resplandor suave).
+    let head = (-d * d * 260.0).exp() * 1.5 + (-d * 16.0).exp() * 0.35;
+    // Capa 3: destello en cruz típico de las estrellas.
+    let dx = STREAK_HEAD - f.p.x;
+    let cross = (-f.p.y.abs() * 40.0).exp() * (-dx.abs() * 7.0).exp() * 0.55
+        + (-dx.abs() * 45.0).exp() * (-f.p.y.abs() * 9.0).exp() * 0.55;
+    // Capa 4: color blanco -> azul eléctrico -> violeta con la distancia a la cabeza.
+    let col = ramp(
+        &[(0.0, c3(1.0, 1.0, 1.0)), (0.15, c3(0.75, 0.9, 1.0)), (0.5, c3(0.35, 0.55, 1.0)), (1.0, c3(0.5, 0.25, 0.9))],
+        u,
+    );
+    let a = (tail + head + cross).clamp(0.0, 1.0);
+    if a < 0.01 {
+        return None;
+    }
+    out(col.mix(c3(1.0, 1.0, 1.0), (head * 0.7).min(1.0)), a)
+}
+
+fn fire_trail(f: &Frag) -> Option<[f32; 4]> {
+    let (u, v, d, ahead) = streak_coords(f);
+    // Estela de plasma: ancha cerca del meteorito, turbulenta, de blanco a naranja y rojo oscuro.
+    let width = 0.2 + 0.4 * u.sqrt();
+    let turb = fbm(Vec3::new(u * 14.0 - f.t * 5.0, v * 2.0, 2.0), 3);
+    let side = v.abs() / width;
+    let body = (-side * side * 3.0).exp() * (-u * 3.2).exp() * (0.5 + turb) * ahead;
+    let glow = (-d * d * 60.0).exp() * 0.6;
+    let col = ramp(
+        &[(0.0, c3(1.0, 0.95, 0.75)), (0.2, c3(1.0, 0.55, 0.12)), (0.6, c3(0.8, 0.18, 0.03)), (1.0, c3(0.3, 0.05, 0.02))],
+        u,
+    );
+    let a = (body + glow).clamp(0.0, 1.0);
+    if a < 0.01 {
+        return None;
+    }
+    out(col * (1.0 + 0.5 * (1.0 - u)), a * 0.9)
 }

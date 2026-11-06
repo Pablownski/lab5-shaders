@@ -1,4 +1,5 @@
 use crate::math::Vec3;
+use crate::noise::fbm;
 use std::f32::consts::PI;
 
 pub struct Mesh {
@@ -95,4 +96,48 @@ pub fn satellite() -> Mesh {
         );
     }
     m
+}
+
+/// Meteorito: esfera deformada con ruido (forma irregular y alargada) con normales por vértice.
+pub fn rock(lat: usize, lon: usize) -> Mesh {
+    let mut m = sphere(lat, lon);
+    for p in m.pos.iter_mut() {
+        let d = *p;
+        let r = 1.0 + 0.6 * (fbm(d * 1.7 + Vec3::new(4.0, 2.0, 7.0), 3) - 0.5);
+        *p = Vec3::new(d.x * 1.25, d.y * 0.85, d.z) * r;
+    }
+    // Normales: promedio de las normales de las caras vecinas.
+    let mut nrm = vec![Vec3::ZERO; m.pos.len()];
+    for t in &m.tris {
+        let n = (m.pos[t[1]] - m.pos[t[0]]).cross(m.pos[t[2]] - m.pos[t[0]]);
+        for &i in t {
+            nrm[i] += n;
+        }
+    }
+    // Las normales de la esfera base apuntan hacia afuera: alinear el signo con ellas.
+    for (n, base) in nrm.iter_mut().zip(&m.nrm) {
+        *n = n.normalized();
+        if n.dot(*base) < 0.0 {
+            *n = -*n;
+        }
+    }
+    m.nrm = nrm;
+    m.spherical = false;
+    m
+}
+
+/// Franja larga y estrecha para estelas: x en [-1, 1] (la cabeza está cerca de +x), y en [-0.3, 0.3].
+pub fn streak() -> Mesh {
+    let pos = vec![
+        Vec3::new(-1.0, -0.3, 0.0),
+        Vec3::new(1.0, -0.3, 0.0),
+        Vec3::new(1.0, 0.3, 0.0),
+        Vec3::new(-1.0, 0.3, 0.0),
+    ];
+    Mesh {
+        nrm: vec![Vec3::new(0.0, 0.0, -1.0); 4],
+        pos,
+        tris: vec![[0, 1, 2], [0, 2, 3]],
+        spherical: false,
+    }
 }

@@ -24,6 +24,8 @@ enum MeshKind {
     Ring,
     Quad,
     Satellite,
+    Rock,
+    Streak,
 }
 
 /// Una pieza renderizable: malla + shader + su transformación (escala, inclinación, giro, órbita).
@@ -41,6 +43,10 @@ struct Part {
     billboard: bool,
     /// Inclinación del eje del planeta, para la sombra de sus anillos.
     axis_tilt: f32,
+    /// Trayectoria lineal (inicio, fin, periodo, fase inicial) en el espacio de la escena; se repite.
+    /// Si inicio == fin la pieza queda fija en ese punto. Un billboard con trayectoria es una estela:
+    /// se orienta según el movimiento y su cabeza (extremo +x) queda sobre la posición.
+    path: Option<(Vec3, Vec3, f32, f32)>,
 }
 
 struct Body {
@@ -52,7 +58,7 @@ struct Body {
 }
 
 fn part(mesh: MeshKind, shader: Shader, scale: f32) -> Part {
-    Part { mesh, shader, scale, tilt: 0.0, spin: 0.0, orbit: None, billboard: false, axis_tilt: 0.0 }
+    Part { mesh, shader, scale, tilt: 0.0, spin: 0.0, orbit: None, billboard: false, axis_tilt: 0.0, path: None }
 }
 
 fn bodies() -> Vec<Body> {
@@ -67,28 +73,10 @@ fn bodies() -> Vec<Body> {
             ],
         },
         Body {
-            name: "Planeta rocoso con luna",
+            name: "Planeta rocoso con luna, satélites, meteorito y estrella fugaz",
             file: "rocoso",
             zoom: 125.0,
-            parts: vec![
-                Part { spin: 0.25, tilt: 0.41, ..part(MeshKind::Sphere, Shader::Earth, 1.0) },
-                Part {
-                    spin: 0.1,
-                    orbit: Some((2.5, 0.35, 0.18, 1.94)),
-                    ..part(MeshKind::Sphere, Shader::Moon, 0.27)
-                },
-                // Satélites artificiales: uno en órbita baja inclinada y otro casi polar y retrógrado.
-                Part {
-                    spin: 0.9,
-                    orbit: Some((1.55, 1.1, 0.8, 0.5)),
-                    ..part(MeshKind::Satellite, Shader::Satellite, 0.13)
-                },
-                Part {
-                    spin: -0.7,
-                    orbit: Some((1.9, -0.8, 1.45, 3.0)),
-                    ..part(MeshKind::Satellite, Shader::Satellite, 0.11)
-                },
-            ],
+            parts: earth_parts(),
         },
         Body {
             name: "Gigante gaseoso con anillos y lunas",
@@ -126,6 +114,46 @@ fn bodies() -> Vec<Body> {
                 Part { tilt: 0.22, axis_tilt: 0.22, ..part(MeshKind::Ring, Shader::BhDisk, 3.8) },
             ],
         },
+        Body {
+            name: "Vista conjunta: estrella, Tierra, luna, satélites, meteorito y estrella fugaz",
+            file: "conjunta",
+            zoom: 80.0,
+            parts: {
+                let sun = Vec3::new(-4.3, 2.4, 4.0);
+                let fixed = Some((sun, sun, 1.0, 0.0));
+                let mut parts = vec![
+                    Part { billboard: true, path: fixed, ..part(MeshKind::Quad, Shader::Corona, 2.4 * 0.9) },
+                    Part { spin: 0.08, path: fixed, ..part(MeshKind::Sphere, Shader::Star, 0.9) },
+                ];
+                parts.extend(earth_parts());
+                parts
+            },
+        },
+    ]
+}
+
+/// Tierra con su luna, dos satélites artificiales, un meteorito con estela de fuego y una estrella fugaz.
+fn earth_parts() -> Vec<Part> {
+    // El meteorito pasa rozando la Tierra por abajo; la estrella fugaz cruza por encima.
+    let meteor = (Vec3::new(5.0, -3.0, -1.2), Vec3::new(-4.5, -0.6, -1.2), 24.0, 0.383);
+    let shooting = (Vec3::new(-6.0, 3.2, -1.5), Vec3::new(6.0, 0.3, -1.5), 11.0, 0.086);
+    vec![
+        Part { spin: 0.25, tilt: 0.41, ..part(MeshKind::Sphere, Shader::Earth, 1.0) },
+        Part { spin: 0.1, orbit: Some((2.5, 0.35, 0.18, 1.94)), ..part(MeshKind::Sphere, Shader::Moon, 0.27) },
+        // Satélites artificiales: uno en órbita baja inclinada y otro casi polar y retrógrado.
+        Part {
+            spin: 0.9,
+            orbit: Some((1.55, 1.1, 0.8, 0.5)),
+            ..part(MeshKind::Satellite, Shader::Satellite, 0.13)
+        },
+        Part {
+            spin: -0.7,
+            orbit: Some((1.9, -0.8, 1.45, 3.0)),
+            ..part(MeshKind::Satellite, Shader::Satellite, 0.11)
+        },
+        Part { billboard: true, path: Some(meteor), ..part(MeshKind::Streak, Shader::Fire, 1.1) },
+        Part { spin: 1.6, path: Some(meteor), ..part(MeshKind::Rock, Shader::Meteorite, 0.13) },
+        Part { billboard: true, path: Some(shooting), ..part(MeshKind::Streak, Shader::ShootingStar, 1.5) },
     ]
 }
 
@@ -134,6 +162,8 @@ struct Meshes {
     ring: Mesh,
     quad: Mesh,
     satellite: Mesh,
+    rock: Mesh,
+    streak: Mesh,
 }
 
 impl Meshes {
@@ -143,6 +173,8 @@ impl Meshes {
             MeshKind::Ring => &self.ring,
             MeshKind::Quad => &self.quad,
             MeshKind::Satellite => &self.satellite,
+            MeshKind::Rock => &self.rock,
+            MeshKind::Streak => &self.streak,
         }
     }
 }
@@ -177,15 +209,29 @@ fn render(fb: &mut Framebuffer, meshes: &Meshes, body: &Body, pl: &Placement, t:
         let mesh = meshes.get(part.mesh);
         let spin = part.spin * t;
         let scale = part.scale * pl.size;
-        let offset = match part.orbit {
-            Some((dist, speed, incl, phase)) => Vec3::new((speed * t + phase).cos(), 0.0, (speed * t + phase).sin())
-                .rot_x(incl)
-                * (dist * pl.size),
+        let orbit_offset = match part.orbit {
+            Some((dist, speed, incl, phase)) => {
+                Vec3::new((speed * t + phase).cos(), 0.0, (speed * t + phase).sin()).rot_x(incl) * dist
+            }
             None => Vec3::ZERO,
         };
+        let path_offset = match part.path {
+            Some((a, b, period, phase0)) => a + (b - a) * (t / period + phase0).fract(),
+            None => Vec3::ZERO,
+        };
+        let offset = (orbit_offset + path_offset) * pl.size;
+        // Estela: billboard que se mueve; apunta en la dirección del movimiento proyectada en pantalla.
+        let streak_dir = match part.path {
+            Some((a, b, _, _)) if part.billboard && (b - a).length() > 1e-6 => {
+                let d = view_rot(b - a, yaw, pitch);
+                Some(Vec3::new(d.x, d.y, 0.0).normalized())
+            }
+            _ => None,
+        };
+        let tilt = streak_dir.map_or(part.tilt, |d| d.y.atan2(d.x));
         let to_view = |v: Vec3| -> Vec3 {
             if part.billboard {
-                return v;
+                return v.rot_z(tilt);
             }
             view_rot(v.rot_y(spin).rot_z(part.tilt), yaw, pitch)
         };
@@ -194,7 +240,9 @@ fn render(fb: &mut Framebuffer, meshes: &Meshes, body: &Body, pl: &Placement, t:
         } else {
             view_rot(Vec3::new(0.0, 1.0, 0.0).rot_z(part.axis_tilt), yaw, pitch)
         };
-        let off_view = if part.billboard { Vec3::ZERO } else { view_rot(offset, yaw, pitch) };
+        // La cabeza de la estela (+x) queda sobre la posición de la trayectoria.
+        let head_shift = streak_dir.map_or(Vec3::ZERO, |d| d * -scale * shaders::STREAK_HEAD);
+        let off_view = view_rot(offset, yaw, pitch) + head_shift;
 
         let verts: Vec<Vtx> = mesh
             .pos
@@ -336,7 +384,14 @@ fn default_pitch(bodies: &[Body], view: usize) -> f32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let meshes = Meshes { sphere: mesh::sphere(64, 128), ring: mesh::annulus(180), quad: mesh::quad(), satellite: mesh::satellite() };
+    let meshes = Meshes {
+        sphere: mesh::sphere(64, 128),
+        ring: mesh::annulus(180),
+        quad: mesh::quad(),
+        satellite: mesh::satellite(),
+        rock: mesh::rock(24, 48),
+        streak: mesh::streak(),
+    };
     let bodies = bodies();
     let views = bodies.len() + 1;
 
@@ -360,7 +415,7 @@ fn main() {
     let mut current = bodies.len();
     let (mut yaw, mut pitch) = (0.0_f32, default_pitch(&bodies, current));
     let (mut t, mut paused, mut zoom, mut focus) = (0.0_f32, false, 1.0_f32, 0usize);
-    let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6, Key::Key7];
+    let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6, Key::Key7, Key::Key8];
     window.set_title(&title(&bodies, current, focus));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
