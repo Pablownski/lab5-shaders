@@ -21,14 +21,17 @@ pub struct Frag {
     pub p: Vec3,
     /// Normal en espacio de vista.
     pub n: Vec3,
-    /// Posición en espacio de vista; el planeta está en el origen con radio 1.
+    /// Posición en espacio de vista relativa al centro del planeta, en radios planetarios.
     pub w: Vec3,
     pub t: f32,
     /// Eje de rotación del planeta en espacio de vista (para la sombra de los anillos).
     pub axis: Vec3,
+    /// Dirección unitaria hacia la luz (hacia la estrella en la vista del sistema).
+    pub light: Vec3,
 }
 
-pub fn light() -> Vec3 {
+/// Luz fija para las vistas de un solo cuerpo.
+pub fn default_light() -> Vec3 {
     Vec3::new(-0.6, 0.45, -0.66).normalized()
 }
 
@@ -75,7 +78,7 @@ fn facing(f: &Frag) -> f32 {
 }
 
 fn diffuse(f: &Frag) -> f32 {
-    f.n.dot(light()).max(0.0)
+    f.n.dot(f.light).max(0.0)
 }
 
 // ---------- estrella ----------
@@ -181,7 +184,7 @@ fn earth(f: &Frag) -> Option<[f32; 4]> {
     // Iluminación difusa + brillo especular solo en el agua.
     let mut col = surf * (0.03 + diff);
     if is_water {
-        let hv = (light() + c3(0.0, 0.0, -1.0)).normalized();
+        let hv = (f.light + c3(0.0, 0.0, -1.0)).normalized();
         col += c3(1.0, 0.95, 0.85) * f.n.dot(hv).max(0.0).powf(70.0) * 0.8;
     }
 
@@ -288,12 +291,12 @@ fn gas_giant(f: &Frag) -> Option<[f32; 4]> {
     }
 
     // Sombra de los anillos proyectada sobre el planeta.
-    let la = light().dot(f.axis);
+    let la = f.light.dot(f.axis);
     let mut shadow = 1.0;
     if la.abs() > 1e-3 {
         let s = -f.w.dot(f.axis) / la;
         if s > 0.0 {
-            let r = (f.w + light() * s).length();
+            let r = (f.w + f.light * s).length();
             if (1.25..2.5).contains(&r) {
                 shadow = 1.0 - 0.75 * ring_density((r - 1.25) / 1.25);
             }
@@ -316,10 +319,10 @@ fn gas_ring(f: &Frag) -> Option<[f32; 4]> {
     let tone = noise(Vec3::new(u * 25.0, 3.0, 1.0));
     let col = c3(0.52, 0.42, 0.33).mix(c3(0.88, 0.80, 0.66), tone);
     // Sombra del planeta sobre el anillo (rayo hacia la luz contra la esfera unitaria).
-    let b = f.w.dot(light());
+    let b = f.w.dot(f.light);
     let disc = b * b - (f.w.dot(f.w) - 1.0);
     let shadow = if disc > 0.0 && -b + disc.sqrt() > 0.0 { 0.10 } else { 1.0 };
-    let bright = (0.45 + 0.55 * f.n.dot(light()).abs()) * shadow;
+    let bright = (0.45 + 0.55 * f.n.dot(f.light).abs()) * shadow;
     out(col * bright, d * 0.92)
 }
 
@@ -418,6 +421,6 @@ fn ice_ring(f: &Frag) -> Option<[f32; 4]> {
         return None;
     }
     let grain = 0.7 + 0.3 * noise(Vec3::new(u * 150.0, 2.0, 0.0));
-    let bright = 0.35 + 0.65 * f.n.dot(light()).abs();
+    let bright = 0.35 + 0.65 * f.n.dot(f.light).abs();
     out(c3(0.70, 0.86, 0.90) * bright, d * 0.5 * grain)
 }

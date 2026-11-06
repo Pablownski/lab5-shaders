@@ -9,7 +9,7 @@ cargo run --release              # ventana interactiva
 cargo run --release -- --save-all   # genera los PNG de docs/ (con supermuestreo 2x)
 ```
 
-Controles: `1`–`5` cambia de cuerpo · flechas rotan la cámara · `R` reinicia la vista · `Espacio` pausa la animación · `S` guarda un PNG · `Esc` sale.
+Controles: `1`–`5` cambia de cuerpo, `6` muestra el **sistema completo** (vista inicial) · flechas rotan la cámara · `R` reinicia la vista · `Espacio` pausa la animación · `S` guarda un PNG · `Esc` sale.
 
 ## Cuerpos
 
@@ -24,6 +24,11 @@ Controles: `1`–`5` cambia de cuerpo · flechas rotan la cámara · `R` reinici
 Extras: **anillos** (malla de anillo separada, semitransparente, con división de Cassini y sombra del planeta) en el gaseoso y el de hielo; **luna** (esfera separada con cráteres de dos escalas y mares) que orbita la Tierra; **rotación y traslación** (cada planeta gira sobre su eje inclinado y la luna orbita).
 
 ## Capturas
+
+### Sistema completo
+La estrella al centro y los demás cuerpos orbitándola (traslación), cada uno iluminado desde la estrella.
+
+![Sistema](docs/sistema.png)
 
 ### Estrella
 ![Estrella](docs/estrella.png)
