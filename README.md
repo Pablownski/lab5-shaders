@@ -2,6 +2,10 @@
 
 Software renderer en Rust (rasterizador propio con z-buffer, sin texturas ni materiales) que dibuja cuerpos celestes **solo con shaders procedurales**: ruido de valor, fBm, ruido celular (Worley), domain warping y rampas de color. La esfera, los anillos y la corona se generan por código.
 
+## Video
+
+[Ver el video completo en YouTube](https://youtu.be/uPxJ0lINMGI): un recorrido uno por uno por la estrella, los planetas, el agujero negro, la vista conjunta y el sistema completo.
+
 ## Ejecutar
 
 ```
