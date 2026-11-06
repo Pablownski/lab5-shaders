@@ -1,3 +1,4 @@
+mod font;
 mod framebuffer;
 mod math;
 mod mesh;
@@ -385,6 +386,23 @@ fn title(bodies: &[Body], view: usize, focus: usize) -> String {
     }
 }
 
+/// Ayuda de controles en la esquina superior izquierda (solo en la ventana; no sale en capturas ni videos).
+fn draw_help(buf: &mut [u32], width: usize) {
+    const LINES: [&str; 4] = [
+        "TAB: CAMBIAR DE VISTA",
+        "F: ENFOCAR CUERPO (EN EL SISTEMA)",
+        "+/-: ZOOM   ESPACIO: PAUSA",
+        "H: OCULTAR AYUDA",
+    ];
+    let scale = 2;
+    let box_w = LINES.iter().map(|l| font::text_width(l, scale)).max().unwrap() + 20;
+    font::dim_rect(buf, width, 0, 0, box_w, LINES.len() * 20 + 12);
+    for (i, line) in LINES.iter().enumerate() {
+        let color = if i == 0 { 0x00FF_E27A } else { 0x00D0_D6E8 };
+        font::draw_text(buf, width, 10, 10 + i * 20, line, scale, color);
+    }
+}
+
 fn view_name(bodies: &[Body], view: usize) -> (&'static str, &'static str) {
     bodies.get(view).map_or(("Sistema completo", "sistema"), |b| (b.name, b.file))
 }
@@ -465,6 +483,7 @@ fn main() {
     let mut current = bodies.len();
     let (mut yaw, mut pitch) = (0.0_f32, default_pitch(&bodies, current));
     let (mut t, mut paused, mut zoom, mut focus) = (0.0_f32, false, 1.0_f32, 0usize);
+    let mut show_help = true;
     let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6, Key::Key7, Key::Key8];
     window.set_title(&title(&bodies, current, focus));
 
@@ -486,8 +505,19 @@ fn main() {
             zoom = if current == bodies.len() { focus_zoom(focus) } else { 1.0 };
             pitch = default_pitch(&bodies, current);
         }
-        // Tab: en el sistema, enfoca el siguiente cuerpo (sigue su órbita) y ajusta el zoom.
-        if current == bodies.len() && window.is_key_pressed(Key::Tab, KeyRepeat::No) {
+        // Tab: pasa a la siguiente vista (cíclico).
+        if window.is_key_pressed(Key::Tab, KeyRepeat::No) {
+            current = (current + 1) % views;
+            yaw = 0.0;
+            zoom = if current == bodies.len() { focus_zoom(focus) } else { 1.0 };
+            pitch = default_pitch(&bodies, current);
+            window.set_title(&title(&bodies, current, focus));
+        }
+        if window.is_key_pressed(Key::H, KeyRepeat::No) {
+            show_help = !show_help;
+        }
+        // F: en el sistema, enfoca el siguiente cuerpo (sigue su órbita) y ajusta el zoom.
+        if current == bodies.len() && window.is_key_pressed(Key::F, KeyRepeat::No) {
             focus = (focus + 1) % SYSTEM.len();
             zoom = focus_zoom(focus);
             window.set_title(&title(&bodies, current, focus));
@@ -527,6 +557,9 @@ fn main() {
                 Ok(()) => println!("guardado {path}"),
                 Err(e) => eprintln!("error al guardar: {e}"),
             }
+        }
+        if show_help {
+            draw_help(&mut fb.buffer, WIDTH);
         }
         window.update_with_buffer(&fb.buffer, WIDTH, HEIGHT).unwrap();
     }

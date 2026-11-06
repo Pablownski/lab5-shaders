@@ -15,7 +15,7 @@ cargo run --release -- --gif        # genera un GIF animado por vista en docs/
 cargo run --release -- --video N carpeta   # vuelca 300 cuadros PNG 1280x720 de la vista N (para armar el video con ffmpeg)
 ```
 
-Controles: `1`–`7` cambia de vista (la `7` es la **vista conjunta**: estrella, Tierra, luna, satélites, meteorito y estrella fugaz), `8` muestra el **sistema completo** (vista inicial) · flechas rotan la cámara · rueda del ratón o `+`/`-` hacen zoom · `Tab` (en el sistema) enfoca y sigue al siguiente cuerpo: estrella → lava → rocoso → gaseoso → hielo → agujero negro · `R` reinicia la vista · `Espacio` pausa la animación · `S` guarda un PNG · `Esc` sale.
+Controles: `1`–`7` cambia de vista (la `7` es la **vista conjunta**: estrella, Tierra, luna, satélites, meteorito y estrella fugaz), `8` muestra el **sistema completo** (vista inicial) · flechas rotan la cámara · rueda del ratón o `+`/`-` hacen zoom · `Tab` pasa a la siguiente vista · `F` (en el sistema) enfoca y sigue al siguiente cuerpo: estrella → lava → rocoso → gaseoso → hielo → agujero negro · `H` oculta la ayuda en pantalla · `R` reinicia la vista · `Espacio` pausa la animación · `S` guarda un PNG · `Esc` sale.
 
 ## Cuerpos
 
