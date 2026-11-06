@@ -211,17 +211,28 @@ fn system_center(dist: f32, speed: f32, phase: f32, t: f32) -> Vec3 {
 }
 
 /// Dibuja el sistema completo: estrella al centro y los demás cuerpos orbitándola (traslación).
-fn render_system(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], t: f32, yaw: f32, pitch: f32, zoom_mul: f32) {
+fn render_system(
+    fb: &mut Framebuffer,
+    meshes: &Meshes,
+    bodies: &[Body],
+    t: f32,
+    (yaw, pitch, zoom_mul): (f32, f32, f32),
+    focus: usize,
+) {
     let k = fb.width as f32 / WIDTH as f32;
     let zoom = SYSTEM_ZOOM * zoom_mul * k;
     let (cx, cy) = (fb.width as f32 / 2.0, fb.height as f32 / 2.0);
+
+    // La cámara sigue al cuerpo enfocado: se traslada toda la escena para dejarlo en el centro.
+    let (_, _, fd, fs, fp) = SYSTEM[focus];
+    let shift = system_center(fd, fs, fp, t);
 
     // Líneas de órbita tenues, dibujadas antes que los cuerpos.
     for &(_, _, dist, _, _) in SYSTEM.iter().filter(|s| s.2 > 0.0) {
         let steps = (dist * zoom * 6.0) as usize;
         for i in 0..steps {
             let a = std::f32::consts::TAU * i as f32 / steps as f32;
-            let v = view_rot(Vec3::new(a.cos() * dist, 0.0, a.sin() * dist), yaw, pitch);
+            let v = view_rot(Vec3::new(a.cos() * dist, 0.0, a.sin() * dist) - shift, yaw, pitch);
             let (x, y) = (cx + v.x * zoom, cy - v.y * zoom);
             if x >= 0.0 && y >= 0.0 && (x as usize) < fb.width && (y as usize) < fb.height {
                 fb.put(y as usize * fb.width + x as usize, f32::INFINITY, [0.45, 0.55, 0.8, 0.22]);
@@ -233,9 +244,9 @@ fn render_system(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], t: f32,
     let mut order: Vec<(f32, Placement, usize)> = SYSTEM
         .iter()
         .map(|&(i, size, dist, speed, phase)| {
-            let center = system_center(dist, speed, phase, t);
+            let center = system_center(dist, speed, phase, t) - shift;
             let depth = view_rot(center, yaw, pitch).z;
-            (depth, Placement { center, size, zoom: SYSTEM_ZOOM * zoom_mul, star: Some(Vec3::ZERO) }, i)
+            (depth, Placement { center, size, zoom: SYSTEM_ZOOM * zoom_mul, star: Some(Vec3::ZERO - shift) }, i)
         })
         .collect();
     order.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
@@ -245,15 +256,40 @@ fn render_system(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], t: f32,
 }
 
 /// Vistas: 0..bodies.len() = un cuerpo; la última = sistema completo.
-#[allow(clippy::too_many_arguments)]
-fn draw(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], view: usize, t: f32, yaw: f32, pitch: f32, zoom_mul: f32) {
+fn draw(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], view: usize, t: f32, cam: (f32, f32, f32), focus: usize) {
+    let (yaw, pitch, zoom_mul) = cam;
     fb.clear();
     if view == bodies.len() {
-        render_system(fb, meshes, bodies, t, yaw, pitch, zoom_mul);
+        render_system(fb, meshes, bodies, t, cam, focus);
     } else {
         let b = &bodies[view];
         let pl = Placement { center: Vec3::ZERO, size: 1.0, zoom: b.zoom * zoom_mul, star: None };
         render(fb, meshes, b, &pl, t, yaw, pitch);
+    }
+}
+
+/// Zoom que deja al cuerpo enfocado con ~110 px de radio (el sol = vista completa).
+fn focus_zoom(focus: usize) -> f32 {
+    if focus == 0 {
+        1.0
+    } else {
+        110.0 / (SYSTEM_ZOOM * SYSTEM[focus].1)
+    }
+}
+
+fn focus_name(bodies: &[Body], focus: usize) -> &'static str {
+    if focus == 0 {
+        "Estrella"
+    } else {
+        bodies[SYSTEM[focus].0].name
+    }
+}
+
+fn title(bodies: &[Body], view: usize, focus: usize) -> String {
+    if view == bodies.len() {
+        format!("Shaders - Sistema completo (foco: {})", focus_name(bodies, focus))
+    } else {
+        format!("Shaders - {}", view_name(bodies, view).0)
     }
 }
 
@@ -279,7 +315,7 @@ fn main() {
     if args.iter().any(|a| a == "--save-all") {
         let mut fb = Framebuffer::new(WIDTH * SUPERSAMPLE, HEIGHT * SUPERSAMPLE);
         for v in 0..views {
-            draw(&mut fb, &meshes, &bodies, v, 4.0, 0.0, default_pitch(&bodies, v), 1.0);
+            draw(&mut fb, &meshes, &bodies, v, 4.0, (0.0, default_pitch(&bodies, v), 1.0), 0);
             let path = format!("docs/{}.png", view_name(&bodies, v).1);
             fb.save_png(&path, SUPERSAMPLE).expect("no se pudo guardar la imagen");
             println!("guardado {path}");
@@ -294,18 +330,18 @@ fn main() {
 
     let mut current = bodies.len();
     let (mut yaw, mut pitch) = (0.0_f32, default_pitch(&bodies, current));
-    let (mut t, mut paused, mut zoom) = (0.0_f32, false, 1.0_f32);
+    let (mut t, mut paused, mut zoom, mut focus) = (0.0_f32, false, 1.0_f32, 0usize);
     let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6];
-    window.set_title(&format!("Shaders - {}", view_name(&bodies, current).0));
+    window.set_title(&title(&bodies, current, focus));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         for (i, key) in keys.iter().enumerate() {
             if i < views && window.is_key_pressed(*key, KeyRepeat::No) {
                 current = i;
                 yaw = 0.0;
-                zoom = 1.0;
+                zoom = if current == bodies.len() { focus_zoom(focus) } else { 1.0 };
                 pitch = default_pitch(&bodies, current);
-                window.set_title(&format!("Shaders - {}", view_name(&bodies, current).0));
+                window.set_title(&title(&bodies, current, focus));
             }
         }
         if window.is_key_pressed(Key::Space, KeyRepeat::No) {
@@ -313,8 +349,14 @@ fn main() {
         }
         if window.is_key_pressed(Key::R, KeyRepeat::No) {
             yaw = 0.0;
-            zoom = 1.0;
+            zoom = if current == bodies.len() { focus_zoom(focus) } else { 1.0 };
             pitch = default_pitch(&bodies, current);
+        }
+        // Tab: en el sistema, enfoca el siguiente cuerpo (sigue su órbita) y ajusta el zoom.
+        if current == bodies.len() && window.is_key_pressed(Key::Tab, KeyRepeat::No) {
+            focus = (focus + 1) % SYSTEM.len();
+            zoom = focus_zoom(focus);
+            window.set_title(&title(&bodies, current, focus));
         }
         if window.is_key_down(Key::Left) {
             yaw -= 0.03;
@@ -338,12 +380,12 @@ fn main() {
         if window.is_key_down(Key::Minus) || window.is_key_down(Key::NumPadMinus) {
             zoom /= 1.03;
         }
-        zoom = zoom.clamp(0.3, 8.0);
+        zoom = zoom.clamp(0.3, 14.0);
         if !paused {
             t += 1.0 / 30.0;
         }
 
-        draw(&mut fb, &meshes, &bodies, current, t, yaw, pitch, zoom);
+        draw(&mut fb, &meshes, &bodies, current, t, (yaw, pitch, zoom), focus);
 
         if window.is_key_pressed(Key::S, KeyRepeat::No) {
             let path = format!("docs/{}.png", view_name(&bodies, current).1);
