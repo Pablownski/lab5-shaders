@@ -9,7 +9,7 @@ cargo run --release              # ventana interactiva
 cargo run --release -- --save-all   # genera los PNG de docs/ (con supermuestreo 2x)
 ```
 
-Controles: `1`–`5` cambia de cuerpo, `6` muestra el **sistema completo** (vista inicial) · flechas rotan la cámara · `R` reinicia la vista · `Espacio` pausa la animación · `S` guarda un PNG · `Esc` sale.
+Controles: `1`–`5` cambia de cuerpo, `6` muestra el **sistema completo** (vista inicial) · flechas rotan la cámara · rueda del ratón o `+`/`-` hacen zoom · `R` reinicia la vista · `Espacio` pausa la animación · `S` guarda un PNG · `Esc` sale.
 
 ## Cuerpos
 

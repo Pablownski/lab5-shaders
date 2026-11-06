@@ -211,9 +211,9 @@ fn system_center(dist: f32, speed: f32, phase: f32, t: f32) -> Vec3 {
 }
 
 /// Dibuja el sistema completo: estrella al centro y los demás cuerpos orbitándola (traslación).
-fn render_system(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], t: f32, yaw: f32, pitch: f32) {
+fn render_system(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], t: f32, yaw: f32, pitch: f32, zoom_mul: f32) {
     let k = fb.width as f32 / WIDTH as f32;
-    let zoom = SYSTEM_ZOOM * k;
+    let zoom = SYSTEM_ZOOM * zoom_mul * k;
     let (cx, cy) = (fb.width as f32 / 2.0, fb.height as f32 / 2.0);
 
     // Líneas de órbita tenues, dibujadas antes que los cuerpos.
@@ -235,7 +235,7 @@ fn render_system(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], t: f32,
         .map(|&(i, size, dist, speed, phase)| {
             let center = system_center(dist, speed, phase, t);
             let depth = view_rot(center, yaw, pitch).z;
-            (depth, Placement { center, size, zoom: SYSTEM_ZOOM, star: Some(Vec3::ZERO) }, i)
+            (depth, Placement { center, size, zoom: SYSTEM_ZOOM * zoom_mul, star: Some(Vec3::ZERO) }, i)
         })
         .collect();
     order.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
@@ -245,13 +245,14 @@ fn render_system(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], t: f32,
 }
 
 /// Vistas: 0..bodies.len() = un cuerpo; la última = sistema completo.
-fn draw(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], view: usize, t: f32, yaw: f32, pitch: f32) {
+#[allow(clippy::too_many_arguments)]
+fn draw(fb: &mut Framebuffer, meshes: &Meshes, bodies: &[Body], view: usize, t: f32, yaw: f32, pitch: f32, zoom_mul: f32) {
     fb.clear();
     if view == bodies.len() {
-        render_system(fb, meshes, bodies, t, yaw, pitch);
+        render_system(fb, meshes, bodies, t, yaw, pitch, zoom_mul);
     } else {
         let b = &bodies[view];
-        let pl = Placement { center: Vec3::ZERO, size: 1.0, zoom: b.zoom, star: None };
+        let pl = Placement { center: Vec3::ZERO, size: 1.0, zoom: b.zoom * zoom_mul, star: None };
         render(fb, meshes, b, &pl, t, yaw, pitch);
     }
 }
@@ -278,7 +279,7 @@ fn main() {
     if args.iter().any(|a| a == "--save-all") {
         let mut fb = Framebuffer::new(WIDTH * SUPERSAMPLE, HEIGHT * SUPERSAMPLE);
         for v in 0..views {
-            draw(&mut fb, &meshes, &bodies, v, 4.0, 0.0, default_pitch(&bodies, v));
+            draw(&mut fb, &meshes, &bodies, v, 4.0, 0.0, default_pitch(&bodies, v), 1.0);
             let path = format!("docs/{}.png", view_name(&bodies, v).1);
             fb.save_png(&path, SUPERSAMPLE).expect("no se pudo guardar la imagen");
             println!("guardado {path}");
@@ -293,7 +294,7 @@ fn main() {
 
     let mut current = bodies.len();
     let (mut yaw, mut pitch) = (0.0_f32, default_pitch(&bodies, current));
-    let (mut t, mut paused) = (0.0_f32, false);
+    let (mut t, mut paused, mut zoom) = (0.0_f32, false, 1.0_f32);
     let keys = [Key::Key1, Key::Key2, Key::Key3, Key::Key4, Key::Key5, Key::Key6];
     window.set_title(&format!("Shaders - {}", view_name(&bodies, current).0));
 
@@ -302,6 +303,7 @@ fn main() {
             if i < views && window.is_key_pressed(*key, KeyRepeat::No) {
                 current = i;
                 yaw = 0.0;
+                zoom = 1.0;
                 pitch = default_pitch(&bodies, current);
                 window.set_title(&format!("Shaders - {}", view_name(&bodies, current).0));
             }
@@ -311,6 +313,7 @@ fn main() {
         }
         if window.is_key_pressed(Key::R, KeyRepeat::No) {
             yaw = 0.0;
+            zoom = 1.0;
             pitch = default_pitch(&bodies, current);
         }
         if window.is_key_down(Key::Left) {
@@ -325,11 +328,22 @@ fn main() {
         if window.is_key_down(Key::Down) {
             pitch += 0.03;
         }
+        // Zoom: rueda del ratón o teclas +/-.
+        if let Some((_, dy)) = window.get_scroll_wheel() {
+            zoom *= 1.1_f32.powf(dy);
+        }
+        if window.is_key_down(Key::Equal) || window.is_key_down(Key::NumPadPlus) {
+            zoom *= 1.03;
+        }
+        if window.is_key_down(Key::Minus) || window.is_key_down(Key::NumPadMinus) {
+            zoom /= 1.03;
+        }
+        zoom = zoom.clamp(0.3, 8.0);
         if !paused {
             t += 1.0 / 30.0;
         }
 
-        draw(&mut fb, &meshes, &bodies, current, t, yaw, pitch);
+        draw(&mut fb, &meshes, &bodies, current, t, yaw, pitch, zoom);
 
         if window.is_key_pressed(Key::S, KeyRepeat::No) {
             let path = format!("docs/{}.png", view_name(&bodies, current).1);
